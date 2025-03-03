@@ -57,7 +57,7 @@ const EXTENSION_PROFILE_TWO_BYTE: u16 = 0x1000;
 const extensionIDReserved     = 0xF;
 const CC_MASK = 0xF;
 const MARKER_SHIFT = 7;
-const markerMask              = 0x1;
+const MARKER_MASK = 0x1;
 const ptMask                  = 0x7F;
 const SEQ_NUM_OFFSET: usize = 2;
 const SEQ_NUM_LENGTH: usize = 2;
@@ -90,7 +90,7 @@ impl Header {
     /// It returns the number of bytes read n and any error.
     pub fn unmarshal(&mut self, buf: &[u8]) -> Result<n int, err error> {
         if buf.len() < HEADER_LENGTH {
-            return 0, fmt.Errorf("%w: %d < %d", errHeaderSizeInsufficient, len(buf), HEADER_LENGTH);
+            return 0, fmt.Errorf("%w: %d < %d", errHeaderSizeInsufficient, buf.len(), HEADER_LENGTH);
         }
 
         /*
@@ -120,11 +120,11 @@ impl Header {
 
         n = CSRC_OFFSET + (n_csrc * CSRC_LENGTH)
         if buf.len() < n {
-            return n, fmt.Errorf("size %d < %d: %w", len(buf), n,
+            return n, fmt.Errorf("size %d < %d: %w", buf.len(), n,
                 errHeaderSizeInsufficient);
         }
 
-        self.marker = (buf[1] >> MARKER_SHIFT & markerMask) > 0;
+        self.marker = (buf[1] >> MARKER_SHIFT & MARKER_MASK) > 0;
         self.payload_type = buf[1] & ptMask;
 
         self.sequence_number = binary.BigEndian.Uint16(buf[SEQ_NUM_OFFSET : SEQ_NUM_OFFSET+SEQ_NUM_LENGTH]);
@@ -151,31 +151,32 @@ impl Header {
 
             self.extension_profile = binary.BigEndian.Uint16(buf[n:]);
             n += 2;
-            extensionLength := int(binary.BigEndian.Uint16(buf[n:])) * 4;
+            let extension_length = int(binary.BigEndian.Uint16(buf[n:])) * 4;
             n += 2;
-            extensionEnd := n + extensionLength;
+            let extension_end = n + extension_length;
 
-            if buf.len() < extensionEnd {
-                return n, fmt.Errorf("size %d < %d: %w", len(buf), extensionEnd, errHeaderSizeInsufficientForExtension)
+            if buf.len() < extension_end {
+                return n, fmt.Errorf("size %d < %d: %w", buf.len(), extension_end, errHeaderSizeInsufficientForExtension);
             }
 
-            if self.extension_profile == extensionProfileOneByte || self.extension_profile == extensionProfileTwoByte {
+            if self.extension_profile == EXTENSION_PROFILE_ONE_BYTE || self.extension_profile == EXTENSION_PROFILE_TWO_BYTE {
+                let mut extid: u8;
                 var (
-                    extid      uint8
+
                     payloadLen int
                 )
 
                 for n < extensionEnd {
                     if buf[n] == 0x00 { // padding
-                        n++
+                        n += 1;
 
                         continue
                     }
 
-                    if self.extension_profile == extensionProfileOneByte {
-                        extid = buf[n] >> 4
-                        payloadLen = int(buf[n]&^0xF0 + 1)
-                        n++
+                    if self.extension_profile == EXTENSION_PROFILE_ONE_BYTE {
+                        extid = buf[n] >> 4;
+                        payloadLen = buf[n]&^0xF0 + 1 as int;
+                        n += 1;
 
                         if extid == extensionIDReserved {
                             break
@@ -184,16 +185,16 @@ impl Header {
                         extid = buf[n]
                         n++
 
-                        if len(buf) <= n {
-                            return n, fmt.Errorf("size %d < %d: %w", len(buf), n, errHeaderSizeInsufficientForExtension)
+                        if buf.len() <= n {
+                            return n, fmt.Errorf("size %d < %d: %w", buf.len(), n, errHeaderSizeInsufficientForExtension)
                         }
 
                         payloadLen = int(buf[n])
                         n++
                     }
 
-                    if extensionPayloadEnd := n + payloadLen; len(buf) <= extensionPayloadEnd {
-                        return n, fmt.Errorf("size %d < %d: %w", len(buf), extensionPayloadEnd, errHeaderSizeInsufficientForExtension)
+                    if extensionPayloadEnd := n + payloadLen; buf.len() <= extensionPayloadEnd {
+                        return n, fmt.Errorf("size %d < %d: %w", buf.len(), extensionPayloadEnd, errHeaderSizeInsufficientForExtension)
                     }
 
                     extension := Extension{id: extid, payload: buf[n : n+payloadLen]}
@@ -202,9 +203,9 @@ impl Header {
                 }
             } else {
                 // RFC3550 Extension
-                extension := Extension{id: 0, payload: buf[n:extensionEnd]}
+                let extension = Extension{ id: 0, payload: buf[n:extensionEnd] };
                 self.extensions = append(self.extensions, extension)
-                n += len(self.extensions[0].payload)
+                n += self.extensions[0].payload.len();
             }
         }
 
@@ -212,31 +213,32 @@ impl Header {
     }
 }
 
+impl Packet {
+    /// Unmarshal parses the passed byte slice and stores the result in the Packet.
+    pub fn unmarshal(buf []byte) error {
+        n, err := p.Header.Unmarshal(buf)
+        if err != nil {
+            return err
+        }
 
-// Unmarshal parses the passed byte slice and stores the result in the Packet.
-func (p *Packet) Unmarshal(buf []byte) error {
-    n, err := p.Header.Unmarshal(buf)
-    if err != nil {
-        return err
-    }
-
-    end := len(buf)
-    if p.Header.Padding {
-        if end <= n {
+        end := buf.len()
+        if p.Header.Padding {
+            if end <= n {
+                return errTooSmall
+            }
+            p.PaddingSize = buf[end-1]
+            end -= int(p.PaddingSize)
+        } else {
+            p.PaddingSize = 0
+        }
+        if end < n {
             return errTooSmall
         }
-        p.PaddingSize = buf[end-1]
-        end -= int(p.PaddingSize)
-    } else {
-        p.PaddingSize = 0
-    }
-    if end < n {
-        return errTooSmall
-    }
 
-    p.Payload = buf[n:end]
+        p.Payload = buf[n:end]
 
-    return nil
+        return nil
+    }
 }
 
 // Marshal serializes the header into bytes.
@@ -269,7 +271,7 @@ func (h Header) MarshalTo(buf []byte) (n int, err error) { //nolint:cyclop
      */
 
     size := h.MarshalSize()
-    if size > len(buf) {
+    if size > buf.len() {
         return 0, io.ErrShortBuffer
     }
 
@@ -308,14 +310,14 @@ func (h Header) MarshalTo(buf []byte) (n int, err error) { //nolint:cyclop
 
         switch self.extension_profile {
         // RFC 8285 RTP One Byte Header Extension
-        case extensionProfileOneByte:
+        case EXTENSION_PROFILE_ONE_BYTE:
             for _, extension := range self.extensions {
                 buf[n] = extension.id<<4 | (uint8(len(extension.payload)) - 1) // nolint: gosec // G115
                 n++
                 n += copy(buf[n:], extension.payload)
             }
         // RFC 8285 RTP Two Byte Header Extension
-        case extensionProfileTwoByte:
+        case EXTENSION_PROFILE_TWO_BYTE:
             for _, extension := range self.extensions {
                 buf[n] = extension.id
                 n++
@@ -515,7 +517,7 @@ func (p *Packet) MarshalTo(buf []byte) (n int, err error) {
     }
 
     // Make sure the buffer is large enough to hold the packet.
-    if n+len(p.Payload)+int(p.PaddingSize) > len(buf) {
+    if n+len(p.Payload)+int(p.PaddingSize) > buf.len() {
         return 0, io.ErrShortBuffer
     }
 
