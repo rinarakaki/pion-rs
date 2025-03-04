@@ -38,7 +38,7 @@ pub struct Packetizer {
     extension_numbers: struct {
         AbsSendTime int // http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time
     }
-    pub timegen: fu() -> time.Time
+    pub timegen: fn() -> time.Time
 }
 
 impl Packetizer {
