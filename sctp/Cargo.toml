@@ -1,0 +1,7 @@
+[package]
+name = "pion-rs-sctp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+pion-rs-transport = { path = "../transport" }
