@@ -1,0 +1,8 @@
+[package]
+name = "pion-rs-datachannel"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+pion-rs-sctp = { path = "../sctp" }
+pion-rs-transport = { path = "../transport" }
