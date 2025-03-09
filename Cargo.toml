@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "datachannel",
+  "dtls",
   "sctp",
   "transport",
 ]
