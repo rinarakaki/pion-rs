@@ -3,6 +3,7 @@ resolver = "3"
 members = [
   "datachannel",
   "dtls",
+  "mdns",
   "sctp",
   "transport",
 ]
