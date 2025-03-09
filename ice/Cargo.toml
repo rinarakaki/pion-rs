@@ -1,0 +1,11 @@
+[package]
+name = "pion-rs-ice"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+pion-rs-dtls = { path = "../dtls" }
+pion-rs-mdns = { path = "../mdns" }
+pion-rs-stun = { path = "../stun" }
+pion-rs-transport = { path = "../transport" }
+pion-rs-turn = { path = "../turn" }
