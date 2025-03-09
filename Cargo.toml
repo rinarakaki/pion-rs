@@ -8,6 +8,7 @@ members = [
   "rtcp",
   "rtp",
   "sctp",
+  "sdp",
   "stun",
   "transport",
   "turn",
