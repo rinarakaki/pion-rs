@@ -1,0 +1,16 @@
+[package]
+name = "pion-rs-webrtc"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+pion-rs-datachannel = { path = "../datachannel" }
+pion-rs-dtls = { path = "../dtls" }
+pion-rs-ice = { path = "../ice" }
+pion-rs-rtcp = { path = "../rtcp" }
+pion-rs-rtp = { path = "../rtp" }
+pion-rs-sctp = { path = "../sctp" }
+pion-rs-sdp = { path = "../sdp" }
+pion-rs-srtp = { path = "../srtp" }
+pion-rs-stun = { path = "../stun" }
+pion-rs-transport = { path = "../transport" }
