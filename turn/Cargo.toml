@@ -1,0 +1,8 @@
+[package]
+name = "pion-rs-turn"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+pion-rs-stun = { path = "../stun" }
+pion-rs-transport = { path = "../transport" }
