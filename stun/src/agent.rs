@@ -86,35 +86,37 @@ impl Agent {
         &self,
         id: [u8; TRANSACTION_ID_SIZE],
         err: error,
-    ) -> Result<(), error> {}
+    ) -> Result<(), error> {
+        a.mux.Lock()
+        if a.closed {
+            a.mux.Unlock()
+    
+            return Err(ErrAgentClosed);
+        }
+        let t = self.transactions.remove(&id);
+        let h = self.handler;
+        a.mux.Unlock();
+        match t {
+            None => {
+                return Err(ErrTransactionNotExists);
+            },
+            Some(t) => {
+                h(Event {
+                    transaction_id: t.id,
+                    error: err,
+                    ..Default::default()
+                })
+            }
+        }
+    
+        Ok(())
+    }
 
     /// Stop stops transaction by id with ErrTransactionStopped, blocking
     /// until handler returns.
     pub fn stop(&self, id: [u8; TRANSACTION_ID_SIZE]) -> Result<(), error> {
         self.stop_with_error(id, ErrTransactionStopped)
     }
-}
-
-func (a *Agent) StopWithError(id [TransactionIDSize]byte, err error) error {
-    a.mux.Lock()
-    if a.closed {
-        a.mux.Unlock()
-
-        return ErrAgentClosed
-    }
-    t, exists := a.transactions[id]
-    delete(a.transactions, id)
-    h := a.handler
-    a.mux.Unlock()
-    if !exists {
-        return ErrTransactionNotExists
-    }
-    h(Event{
-        TransactionID: t.id,
-        Error:         err,
-    })
-
-    return nil
 }
 
 /// ErrAgentClosed indicates that agent is in closed state and is unable
@@ -126,25 +128,23 @@ impl Agent {
     /// Could return ErrAgentClosed, ErrTransactionExists.
     ///
     /// Agent handler is guaranteed to be eventually called.
-    pub fn start(&self, id: [u8; TRANSACTION_ID_SIZE], deadline: Instant) -> Result<(), error> {}
-}
-
-func (a *Agent) Start(id [TransactionIDSize]byte, deadline time.Time) error {
-    a.mux.Lock()
-    defer a.mux.Unlock()
-    if self.closed {
-        return Err(ErrAgentClosed);
+    pub fn start(&self, id: [u8; TRANSACTION_ID_SIZE], deadline: Instant) -> Result<(), error> {
+        a.mux.Lock()
+        defer a.mux.Unlock()
+        if self.closed {
+            return Err(ErrAgentClosed);
+        }
+        let exists = self.transactions.contains_key(&id);
+        if exists {
+            return Err(ErrTransactionExists);
+        }
+        self.transactions.insert(id, AgentTransaction {
+            id,
+            deadline,
+        });
+    
+        Ok(())
     }
-    _, exists := self.transactions[id];
-    if exists {
-        return Err(ErrTransactionExists);
-    }
-    self.transactions[id] = AgentTransaction {
-        id,
-        deadline,
-    };
-
-    Ok(())
 }
 
 /// agentCollectCap is initial capacity for Agent.Collect slices,
@@ -160,112 +160,106 @@ impl Agent {
     /// Will return ErrAgentClosed if agent is already closed.
     ///
     /// It is safe to call Collect concurrently but makes no sense.
-    pub fn collect(&self, gc_time: Instant) -> Result<(), error> {}
+    pub fn collect(&self, gc_time: Instant) -> Result<(), error> {
+        let mut to_remove: Vec<TransactionId> = Vec::with_capacity(AGENT_COLLECT_CAP);
+        a.mux.Lock()
+        if self.closed {
+            // Doing nothing if agent is closed.
+            // All transactions should be already closed
+            // during Close() call.
+            a.mux.Unlock()
+    
+            return Err(ErrAgentClosed);
+        }
+        // Adding all transactions with deadline before gcTime
+        // to toCall and toRemove slices.
+        // No allocs if there are less than agentCollectCap
+        // timed out transactions.
+        for (id, t) in &self.transactions {
+            if t.deadline < gc_time {
+                to_remove.push(id);
+            }
+        }
+        // Un-registering timed out transactions.
+        for id in &to_remove {
+            self.transactions.remove(id);
+        }
+        // Calling handler does not require locked mutex,
+        // reducing lock time.
+        let h = self.handler;
+        a.mux.Unlock()
+        // Sending ErrTransactionTimeOut to handler for all transactions,
+        // blocking until last one.
+        let mut event = Event {
+            error: ErrTransactionTimeOut,
+            ..Default::default()
+        };
+        for id in to_remove {
+            event.transaction_id = id;
+            h(event);
+        }
+    
+        Ok(())
+    }
 
     /// Process incoming message, synchronously passing it to handler.
-    pub fn process(&self, m: Message) -> Result<(), error> {}
+    pub fn process(&self, m: Message) -> Result<(), error> {
+        let event = Event {
+            transaction_id: m.TransactionID,
+            message: m,
+        };
+        a.mux.Lock()
+        if a.closed {
+            a.mux.Unlock()
+    
+            return Err(ErrAgentClosed);
+        }
+        let h = self.handler;
+        delete(self.transactions, m.transaction_id)
+        a.mux.Unlock()
+        h(event);
+    
+        Ok(())
+    }
 
     /// SetHandler sets agent handler to h.
-    pub fn set_handler(&self, h: Handler) -> Result<(), error> {}
+    pub fn set_handler(&mut self, h: Handler) -> Result<(), error> {
+        a.mux.Lock()
+        if self.closed {
+            a.mux.Unlock()
+    
+            return Err(ErrAgentClosed);
+        }
+        self.handler = h;
+        a.mux.Unlock()
+    
+        Ok(())
+    }
 
     /// Close terminates all transactions with ErrAgentClosed and renders Agent to
     /// closed state.
-    pub fn close(&self) -> Result<(), error> {}
-}
-func (a *Agent) Collect(gcTime time.Time) error {
-    let mut to_remove: Vec<TransactionId> = Vec::with_capacity(AGENT_COLLECT_CAP);
-    a.mux.Lock()
-    if self.closed {
-        // Doing nothing if agent is closed.
-        // All transactions should be already closed
-        // during Close() call.
-        a.mux.Unlock()
-
-        return Err(ErrAgentClosed);
-    }
-    // Adding all transactions with deadline before gcTime
-    // to toCall and toRemove slices.
-    // No allocs if there are less than agentCollectCap
-    // timed out transactions.
-    for (id, t) in &self.transactions {
-        if t.deadline < gc_time {
-            to_remove.push(id);
+    pub fn close(&self) -> Result<(), error> {
+        let mut e = Event {
+            error: ErrAgentClosed,
+            ..Default::default()
         }
-    }
-    // Un-registering timed out transactions.
-    for id in &to_remove {
-        self.transactions.remove(id);
-    }
-    // Calling handler does not require locked mutex,
-    // reducing lock time.
-    let h = self.handler;
-    a.mux.Unlock()
-    // Sending ErrTransactionTimeOut to handler for all transactions,
-    // blocking until last one.
-    let mut event = Event {
-        error: ErrTransactionTimeOut,
-        ..Default::default()
-    };
-    for id in to_remove {
-        event.transaction_id = id;
-        h(event);
-    }
-
-    Ok(())
-}
-
-func (a *Agent) Process(m *Message) error {
-    event := Event{
-        TransactionID: m.TransactionID,
-        Message:       m,
-    }
-    a.mux.Lock()
-    if a.closed {
+        a.mux.Lock()
+        if self.closed {
+            a.mux.Unlock()
+    
+            return Err(ErrAgentClosed);
+        }
+        for t = &self.transactions {
+            e.transaction_id = t.id;
+            self.handler(e);
+        }
+        self.transactions = nil;
+        self.closed = true;
+        self.handler = nil;
         a.mux.Unlock()
-
-        return ErrAgentClosed
+    
+        Ok(())
     }
-    h := a.handler
-    delete(a.transactions, m.TransactionID)
-    a.mux.Unlock()
-    h(event)
-
-    return nil
-}
-
-func (a *Agent) SetHandler(h Handler) error {
-    a.mux.Lock()
-    if a.closed {
-        a.mux.Unlock()
-
-        return ErrAgentClosed
-    }
-    a.handler = h
-    a.mux.Unlock()
-
-    return nil
-}
-
-func (a *Agent) Close() error {
-    e := Event{
-        Error: ErrAgentClosed,
-    }
-    a.mux.Lock()
-    if a.closed {
-        a.mux.Unlock()
-
-        return ErrAgentClosed
-    }
-    for _, t := range a.transactions {
-        e.TransactionID = t.id
-        a.handler(e)
-    }
-    a.transactions = nil
-    a.closed = true
-    a.handler = nil
-    a.mux.Unlock()
-
-    return nil
 }
 
 type TransactionID = [u8; TRANSACTION_ID_SIZE];
