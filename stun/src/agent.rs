@@ -15,7 +15,7 @@ pub fn noop_handler() -> Handler {
 impl Agent {
     /// NewAgent initializes and returns new Agent with provided handler.
     /// If h is nil, the NoopHandler will be used.
-    pub fn new(h: Option<Handler>) -> Agent {
+    pub fn new(h: Handler) -> Agent {
         let h = match h {
             Some(h) => h,
             None => noop_handler(),
@@ -51,7 +51,7 @@ pub struct Agent {
 /// Handler is called on transaction state change.
 /// Usage of e is valid only during call, user must
 /// copy needed fields explicitly.
-pub type Handler = fn(Event);
+pub type Handler = Option<fn(Event)>;
 
 /// Event is passed to Handler describing the transaction event.
 /// Do not reuse outside Handler.
@@ -249,13 +249,13 @@ impl Agent {
     
             return Err(ErrAgentClosed);
         }
-        for t = &self.transactions {
-            e.transaction_id = t.id;
-            self.handler(e);
+        for id in &self.transactions.keys() {
+            e.transaction_id = id;
+            self.handler.unwrap()(e);
         }
-        self.transactions = nil;
+        self.transactions = HashMap::new();
         self.closed = true;
-        self.handler = nil;
+        self.handler = None;
         a.mux.Unlock()
     
         Ok(())
