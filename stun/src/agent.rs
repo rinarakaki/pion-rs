@@ -66,7 +66,7 @@ pub struct Event {
 /// Concurrent access is invalid.
 pub(crate) struct AgentTransaction {
     id: TransactionID,
-    deadline: SystemTime,
+    deadline: Instant,
 }
 
 var (
